@@ -70,6 +70,29 @@ test("sanitizePlan demotes a headline paired with the wrong item", () => {
   assert.equal(brief.split("## One-line radar")[0].includes("Beta browser"), false);
 });
 
+test("sanitizePlan demotes an unsupported novelty claim (archival item)", () => {
+  const archival: NewsItem[] = [
+    { title: "The Annotated VT100 Firmware (2022)", link: "https://v.example/vt100", source: "FeedA", published: "2026-10-20T05:00:00.000Z", summary: "A walkthrough of the annotated firmware ROM dumps." },
+    { title: "Beta browser launches with privacy focus", link: "https://b.example/beta", source: "FeedB", published: "2026-10-20T04:00:00.000Z", summary: "The browser launches today with a new privacy dashboard." },
+  ];
+  const plan: BriefPlan = {
+    top: [
+      // The VT100 failure mode: archival content framed as a fresh release.
+      { id: 1, headline: "The Annotated VT100 Firmware (2022)", summary: "A firmware update for VT100 terminals was released." },
+      // A release claim the item itself supports — must be kept.
+      { id: 2, headline: "Beta browser launches with privacy focus", summary: "The browser was launched today with a new privacy dashboard." },
+    ],
+    themes: [],
+    radar: [],
+  };
+  const { plan: clean, problems } = sanitizePlan(plan, archival);
+  assert.equal(problems.length, 1);
+  assert.ok(problems[0].includes("item 1"));
+  assert.equal(clean.top.length, 1);
+  assert.equal(clean.top[0].id, 2);
+  assert.ok(clean.radar.includes(1), "archival item demoted to radar with its true title");
+});
+
 test("renderBrief: model text cannot smuggle links", () => {
   const plan: BriefPlan = {
     top: [{ id: 1, headline: "See https://evil.example/x now", summary: "Visit [this](https://evil.example/y)!" }],

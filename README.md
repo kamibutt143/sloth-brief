@@ -44,7 +44,12 @@ RSS feeds ──▶ fetch-overnight step ──▶ Sloth Briefer agent ──▶
    A 4B model is a decent editor and a terrible typesetter: it mutates
    long URLs and repeats stories across sections, so it never touches
    either. The rendered brief is validated deterministically (sections
-   present, links traceable, no repeats) with one retry on failure.
+   present, links traceable, no repeats) with one retry on failure —
+   and validation **fails closed**: a brief that still fails is never
+   saved; the run errors out instead. Summaries are sanity-checked too:
+   a headline that doesn't match its item, or a "new release" claim the
+   source item doesn't support (archival content is not a launch), gets
+   demoted to the radar under the item's true title.
    A separate interactive registration of the same agent exposes the RSS
    tool, so in Mastra Studio it can fetch on demand.
 3. **Read** — the brief lands in `briefs/brief-YYYY-MM-DD.md`. That's it.
@@ -59,7 +64,7 @@ Prerequisites: Node.js 22+, [Ollama](https://ollama.com/download).
 ```bash
 # 1. Get an open-weight model running locally
 ollama pull gemma3:4b
-ollama serve            # if the Ollama app/service isn't already running
+OLLAMA_CONTEXT_LENGTH=8192 ollama serve   # ← do not skip the env var, see below
 
 # 2. Clone and install
 git clone https://github.com/kamibutt143/sloth-brief.git
@@ -69,6 +74,16 @@ npm install
 # 3. Make the brief
 npm run brief
 ```
+
+> **⚠️ The context setting is required, not a tuning tip.** Ollama's
+> default context window is 4096 tokens. The overnight feed items alone
+> can fill that, and the brief then truncates mid-sentence (this was the
+> project's first real bug). The workflow budgets its input against
+> `SLOTH_CONTEXT_LENGTH` (default **8192**) — start the server with the
+> matching `OLLAMA_CONTEXT_LENGTH=8192` and keep the two values in sync.
+> If you run Ollama as a desktop app or system service instead of
+> `ollama serve`, set `OLLAMA_CONTEXT_LENGTH=8192` in its environment
+> and restart it before generating a brief.
 
 Your brief is in `briefs/`. Schedule it with cron if you want it truly
 hands-off:
@@ -104,6 +119,9 @@ src/
     agents/briefer.ts             the Sloth Briefer agent (Gemma via Ollama)
     tools/fetch-feeds.ts          RSS fetch tool (also used step-wise)
     workflows/overnight-brief.ts  fetch → brief workflow
+    workflows/brief-plan.ts       plan schema, sanitation, Markdown renderer
+    workflows/validate-brief.ts   deterministic validation + repair + fail-closed gate
+tests/                            unit tests (npm test)
 briefs/                           generated briefings land here
 ```
 

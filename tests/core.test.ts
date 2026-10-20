@@ -10,6 +10,7 @@ import {
 import {
   validateBrief,
   repairBrief,
+  assertBriefValid,
 } from "../src/mastra/workflows/validate-brief.js";
 import type { NewsItem } from "../src/mastra/tools/fetch-feeds.js";
 
@@ -195,6 +196,13 @@ test("repairBrief snaps a mutated URL back to the real item link", () => {
   );
   const unfixed = repairBrief(alien, typoItems);
   assert.equal(validateBrief(unfixed, typoItems).ok, false);
+});
+
+test("assertBriefValid fails closed on an invalid brief", () => {
+  assert.equal(validateBrief(goodBrief, items).ok, true);
+  assert.doesNotThrow(() => assertBriefValid(goodBrief, items));
+  const bad = goodBrief.replace("https://a.example/alpha", "https://evil.example/fake");
+  assert.throws(() => assertBriefValid(bad, items), /not saved/);
 });
 
 test("validateBrief rejects missing sections and an over-full Top 3", () => {

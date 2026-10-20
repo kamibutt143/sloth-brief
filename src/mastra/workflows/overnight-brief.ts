@@ -2,7 +2,7 @@ import { createWorkflow, createStep } from "@mastra/core/workflows";
 import { z } from "zod";
 import { fetchOvernightItems, type NewsItem } from "../tools/fetch-feeds.js";
 import { workflowBrieferAgent } from "../agents/briefer.js";
-import { validateBrief, repairBrief } from "./validate-brief.js";
+import { validateBrief, repairBrief, assertBriefValid } from "./validate-brief.js";
 import { parseBriefPlan, renderBrief, sanitizePlan } from "./brief-plan.js";
 import { WINDOW_HOURS, CONTEXT_LENGTH, OUTPUT_TOKENS } from "../../config.js";
 
@@ -131,37 +131,38 @@ const briefStep = createStep({
       return text;
     };
 
-    // The model returns a plan; the renderer builds the brief. The
-    // rendered brief is still run through repair + validation as a
-    // sanity net — by construction it should always pass.
+    // The model returns a plan; the renderer builds the brief. Two kinds
+    // of problems are tracked separately:
+    // - validation: structural checks on the rendered brief (sections,
+    //   links, repeats). FAIL CLOSED: a brief that fails these is never
+    //   returned — the step throws and no file is written.
+    // - quality problems: sanitizePlan demotions (mismatched headlines,
+    //   unsupported claims), already neutralized by demoting the entry
+    //   to the radar with its true title. Worth one retry so the story
+    //   gets a proper featured slot, but never a reason to ship a lie.
     const attempt = async (extra: string) => {
       const raw = await generate(extra);
       const plan = parseBriefPlan(raw);
       if (!plan) return null;
-      // Demote headline/ID mismatches to the radar (real titles) and
-      // treat them as problems worth one retry.
       const { plan: cleanPlan, problems } = sanitizePlan(plan, items);
       const brief = repairBrief(renderBrief(cleanPlan, items, dateLabel), items);
-      const validation = validateBrief(brief, items);
-      return {
-        brief,
-        validation: {
-          ok: validation.ok && problems.length === 0,
-          problems: [...validation.problems, ...problems],
-        },
-      };
+      return { brief, validation: validateBrief(brief, items), qualityProblems: problems };
     };
+    const score = (r: NonNullable<Awaited<ReturnType<typeof attempt>>>) =>
+      (r.validation.ok ? 0 : 100) +
+      r.validation.problems.length +
+      r.qualityProblems.length;
 
     let result = await attempt("");
-    if (!result || !result.validation.ok) {
+    if (!result || !result.validation.ok || result.qualityProblems.length > 0) {
       const reason = !result
         ? "the model did not return a valid JSON plan"
-        : `the rendered brief failed checks: ${result.validation.problems.join("; ")}`;
+        : [...result.validation.problems, ...result.qualityProblems].join("; ");
       console.error(`[sloth] first attempt unusable (${reason}), retrying once`);
       const retry = await attempt(
         `\n\nIMPORTANT: a previous attempt failed because ${reason}. Return a corrected JSON plan.`,
       );
-      if (retry && (!result || retry.validation.problems.length <= result.validation.problems.length)) {
+      if (retry && (!result || score(retry) <= score(result))) {
         result = retry;
       }
     }
@@ -171,9 +172,11 @@ const briefStep = createStep({
         "The model did not return a valid JSON plan after two attempts. No brief was written.",
       );
     }
-    if (!result.validation.ok) {
+    // FAIL CLOSED: an invalid brief throws here and is never saved.
+    assertBriefValid(result.brief, items);
+    if (result.qualityProblems.length > 0) {
       console.error(
-        `[sloth] brief still has validation problems: ${result.validation.problems.join("; ")}`,
+        `[sloth] note: ${result.qualityProblems.length} entr${result.qualityProblems.length === 1 ? "y" : "ies"} demoted to the radar: ${result.qualityProblems.join("; ")}`,
       );
     }
 

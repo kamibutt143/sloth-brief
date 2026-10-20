@@ -102,6 +102,20 @@ export function closestItemLink(url: string, items: NewsItem[]): string | null {
 }
 
 /**
+ * Fail-closed gate: throw unless the brief passes every structural
+ * check. The workflow calls this before returning, so an invalid brief
+ * can never be saved — the run fails loudly instead.
+ */
+export function assertBriefValid(text: string, items: NewsItem[]): void {
+  const validation = validateBrief(text, items);
+  if (!validation.ok) {
+    throw new Error(
+      `Brief failed validation and was not saved: ${validation.problems.join("; ")}`,
+    );
+  }
+}
+
+/**
  * Deterministic repairs for the most common small-model slips:
  * repeating a story in a second section, naming the wrong source next
  * to a link, wrapping labels/links in stray angle brackets, and

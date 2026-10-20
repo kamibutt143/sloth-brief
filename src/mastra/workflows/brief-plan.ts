@@ -56,13 +56,36 @@ function contentWords(text: string): Set<string> {
   );
 }
 
+// Novelty/release claims a summary might make ("newly released", "was
+// launched", "a new version") — believable only when the source item
+// itself signals novelty. The classic failure: an archival item (a 2022
+// firmware annotation) summarized as if it were today's product launch.
+const CLAIM_PATTERNS = [
+  /\bnewly\s+(released|launched|announced|published|unveiled|introduced)\b/,
+  /\bjust\s+(released|launched|announced|published|dropped|unveiled)\b/,
+  /\bbrand[- ]new\b/,
+  /\bnew\s+(release|version|update|firmware)\b/,
+  /\b(is|was|has been|have been)\s+(released|launched|announced|unveiled|published)\b/,
+];
+const SUPPORT_MARKERS = [
+  "new", "launch", "releas", "announc", "unveil", "introduc",
+  "debut", "latest", "roll", "ship", "first",
+];
+
 /**
- * Coherence check: a plan headline should be a paraphrase of its item's
- * title — they share content words. Zero overlap almost always means
- * the model paired one story's headline with another story's ID (the
- * one semantic error the renderer cannot prevent structurally).
- * Incoherent entries are demoted to the radar, where the item's real
- * title is used — truthful by construction.
+ * Plan sanitation, two lightweight checks — deliberately simple enough
+ * for the pipeline around a 4B model:
+ *
+ * 1. Coherence: a plan headline should be a paraphrase of its item's
+ *    title — they share content words. Zero overlap almost always means
+ *    the model paired one story's headline with another story's ID.
+ * 2. Supported claims: a summary that claims novelty or a release is
+ *    only kept when the item's own title/summary signals the same — and
+ *    never when the title carries an earlier year (archival content).
+ *
+ * Failing entries are demoted to the radar, where the item's real title
+ * is used — truthful by construction — and reported as problems so the
+ * workflow can retry once for a properly featured version.
  */
 export function sanitizePlan(
   plan: BriefPlan,
@@ -81,14 +104,39 @@ export function sanitizePlan(
     return false;
   };
 
-  const check = <T extends { id: number; headline: string }>(entries: T[]): T[] =>
+  const claimSupported = (entry: { headline: string; summary: string }, item: NewsItem): boolean => {
+    const text = `${entry.headline} ${entry.summary}`.toLowerCase();
+    if (!CLAIM_PATTERNS.some((p) => p.test(text))) return true; // no claim made
+    const titleYears = [...item.title.matchAll(/\b(?:19|20)\d{2}\b/g)].map((m) =>
+      Number(m[0]),
+    );
+    if (titleYears.length > 0 && Math.max(...titleYears) < new Date().getFullYear()) {
+      return false; // archival item — a release claim is never supported
+    }
+    const itemText = `${item.title} ${item.summary}`.toLowerCase();
+    return SUPPORT_MARKERS.some((marker) => itemText.includes(marker));
+  };
+
+  const check = <
+    T extends { id: number; headline: string; summary: string },
+  >(entries: T[]): T[] =>
     entries.filter((entry) => {
-      if (coherent(entry.id, entry.headline)) return true;
-      problems.push(
-        `headline for item ${entry.id} ("${entry.headline}") does not match that item's title ("${items[entry.id - 1]?.title}")`,
-      );
-      demoted.push(entry.id);
-      return false;
+      const item = items[entry.id - 1];
+      if (!item || !coherent(entry.id, entry.headline)) {
+        problems.push(
+          `headline for item ${entry.id} ("${entry.headline}") does not match that item's title ("${item?.title}")`,
+        );
+        demoted.push(entry.id);
+        return false;
+      }
+      if (!claimSupported(entry, item)) {
+        problems.push(
+          `summary for item ${entry.id} ("${entry.summary}") claims a release/novelty its source item ("${item.title}") does not support`,
+        );
+        demoted.push(entry.id);
+        return false;
+      }
+      return true;
     });
 
   return {
