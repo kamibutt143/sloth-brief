@@ -1,0 +1,36 @@
+{
+  "name": "sloth-brief",
+  "version": "0.1.0",
+  "description": "Sloth Brief — a local-first AI news research agent (Mastra + Gemma via Ollama). It reads the feeds overnight so you don't have to.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "brief": "tsx src/run.ts",
+    "typecheck": "tsc --noEmit",
+    "dev": "mastra dev --dir src/mastra"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kamibutt143/sloth-brief.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/kamibutt143/sloth-brief/issues"
+  },
+  "homepage": "https://github.com/kamibutt143/sloth-brief#readme",
+  "type": "module",
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.74",
+    "@mastra/core": "^1.78.0",
+    "dotenv": "^18.0.8",
+    "rss-parser": "^3.13.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
