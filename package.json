@@ -2,9 +2,11 @@
   "name": "sloth-brief",
   "version": "0.1.0",
   "description": "Sloth Brief — a local-first AI news research agent (Mastra + Gemma via Ollama). It reads the feeds overnight so you don't have to.",
-  "main": "index.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "tsx --test tests/*.test.ts",
     "brief": "tsx src/run.ts",
     "typecheck": "tsc --noEmit",
     "dev": "mastra dev --dir src/mastra"
@@ -30,6 +32,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "mastra": "^1.34.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }

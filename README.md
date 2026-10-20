@@ -16,13 +16,15 @@ software that rewards laziness, built on open-source AI.
 - **Zero API cost.** The whole pipeline runs on your machine. No keys, no
   per-token bills, no rate limits — the marginal cost of a brief is the
   electricity to run a 4B model for a minute.
-- **Private by default.** Your reading list never leaves your laptop. No
-  analytics company learns that you mainline AI news at 7am.
+- **Private by default.** Feed contents and model inference are processed
+  locally — only the normal RSS HTTP requests to the publishers themselves
+  leave your machine. No analytics company learns that you mainline AI
+  news at 7am.
 - **Swappable models.** Gemma today, whatever ships next month tomorrow.
   The model is a config value (`SLOTH_MODEL`), not a vendor relationship.
-- **Forkable forever.** Mastra, Ollama, Gemma's weights, rss-parser — every
-  layer is open. If any maintainer vanished tomorrow, this project would
-  still run.
+- **Forkable forever.** Open-source tooling (Mastra, Ollama, rss-parser)
+  plus an open-weight Gemma model. If any maintainer vanished tomorrow,
+  this project would still run.
 
 ## How it works
 
@@ -34,10 +36,17 @@ RSS feeds ──▶ fetch-overnight step ──▶ Sloth Briefer agent ──▶
 1. **Fetch** — `fetchOvernightItems()` pulls every feed in `src/config.ts`,
    keeps only items from the last 12 hours, dedupes by link, newest first.
    A dead feed is logged and skipped, never fatal.
-2. **Brief** — the Mastra workflow `overnight-brief` hands the items to the
-   **Sloth Briefer** agent, which clusters them by theme, merges duplicate
-   coverage of the same story, and writes the brief. The agent also has the
-   feed tool registered, so in Mastra Studio it can fetch on demand.
+2. **Brief** — the Mastra workflow `overnight-brief` hands the items
+   (numbered, without links) to a tool-less **Sloth Briefer** agent. The
+   agent does the editing — picks the Top 3, groups the rest by theme,
+   summarizes — and returns it as a structured JSON plan of item IDs.
+   TypeScript then renders the Markdown, attaching the real links itself.
+   A 4B model is a decent editor and a terrible typesetter: it mutates
+   long URLs and repeats stories across sections, so it never touches
+   either. The rendered brief is validated deterministically (sections
+   present, links traceable, no repeats) with one retry on failure.
+   A separate interactive registration of the same agent exposes the RSS
+   tool, so in Mastra Studio it can fetch on demand.
 3. **Read** — the brief lands in `briefs/brief-YYYY-MM-DD.md`. That's it.
    No app, no dashboard, no notifications. It's a file. Read it with coffee.
 
@@ -45,7 +54,7 @@ A real, unedited output: [sample-brief.md](sample-brief.md).
 
 ## Quick start
 
-Prerequisites: Node.js 20+, [Ollama](https://ollama.com/download).
+Prerequisites: Node.js 22+, [Ollama](https://ollama.com/download).
 
 ```bash
 # 1. Get an open-weight model running locally
@@ -76,8 +85,9 @@ All optional, via environment variables (`.env` supported):
 | --- | --- | --- |
 | `SLOTH_MODEL` | `gemma3:4b` | Any model Ollama can pull (`gemma3:1b`, `llama3.2`, …) |
 | `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Ollama's OpenAI-compatible endpoint |
-| `SLOTH_WINDOW_HOURS` | `12` | How far back the overnight window reaches |
-| `SLOTH_MAX_ITEMS` | `40` | Cap on items handed to the model |
+| `SLOTH_WINDOW_HOURS` | `12` | How far back the overnight window reaches (1–168) |
+| `SLOTH_MAX_ITEMS` | `40` | Cap on items handed to the model (1–100) |
+| `SLOTH_CONTEXT_LENGTH` | `8192` | Total context window the workflow budgets against — match your Ollama server's `OLLAMA_CONTEXT_LENGTH` |
 
 Feeds live in `src/config.ts` — edit the `FEEDS` list to follow your own
 sources. Defaults: Hacker News, TechCrunch, The Verge, Ars Technica,
@@ -101,7 +111,9 @@ briefs/                           generated briefings land here
 
 - **Brief cuts off mid-way?** Ollama's default context window (4096 tokens)
   fills up with the feed items and leaves no room for the brief itself.
-  Start the server with a larger context: `OLLAMA_CONTEXT_LENGTH=8192 ollama serve`.
+  Start the server with a larger context: `OLLAMA_CONTEXT_LENGTH=8192 ollama serve`
+  (the workflow budgets its input against `SLOTH_CONTEXT_LENGTH`, default
+  8192 — keep the two in sync).
 - **Very slow generation?** That's CPU inference being CPU inference. The
   brief is generated overnight precisely so nobody has to watch it happen.
   Slower machine, smaller model: `SLOTH_MODEL=gemma3:1b npm run brief`.
